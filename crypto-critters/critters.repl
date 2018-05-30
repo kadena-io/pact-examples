@@ -12,5 +12,5 @@
 (showCritter "" (read critters "0"))
 (print (showGeneration 0))
 (transferCritter (read-keyset "alice") "0")
+(env-keys ["alice"])
 (transferCritter (read-keyset "bob") "0")
-(transferCritter (read-keyset "admin-keyset") "0")

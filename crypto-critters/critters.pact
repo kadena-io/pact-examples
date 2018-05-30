@@ -75,6 +75,7 @@
                "generation" := gen,
                "genes" := genes,
                "owner" := o}
+        (enforce-keyset o)
         (update critters critterId
           {"matronId": m,
            "sireId": s,
