@@ -8,6 +8,7 @@
     matronId:integer
     sireId:integer
     generation:integer
+    owner:keyset
   )
 
   (defschema countSchema
@@ -33,7 +34,8 @@
         { "matronId": 0,
           "sireId": 0,
           "generation": 0,
-          "genes": genes
+          "genes": genes,
+          "owner": (read-keyset "admin-keyset")
         }
       )
       i
@@ -42,8 +44,12 @@
 
   (defun showCritter:string (str:string c:object)
     "String representation of a critter"
-    (bind c {"matronId" := m, "sireId" := s, "generation" := gen, "genes" := genes}
-      (+ (format "gen: {} matron: {} sire: {} {}\n" [gen m s genes]) str)
+    (bind c {"matronId" := m,
+             "sireId" := s,
+             "generation" := gen,
+             "genes" := genes,
+             "owner" := o}
+      (+ (format "gen: {} matron: {} sire: {} owner: {} {}\n" [gen m s o genes]) str)
     )
   )
 
@@ -54,6 +60,31 @@
     )
   )
 
+  (defun owner (critterId:string)
+    "Get the owner of a critter"
+    (let ((c (read critters critterId)))
+      (bind c {"owner" := o} o)
+    )
+  )
+
+  (defun transferCritter (newOwner:keyset critterId:string)
+    "Transfer critter ownership to another party"
+    (let ((c (read critters critterId)))
+      (bind c {"matronId" := m,
+               "sireId" := s,
+               "generation" := gen,
+               "genes" := genes,
+               "owner" := o}
+        (update critters critterId
+          {"matronId": m,
+           "sireId": s,
+           "generation": gen,
+           "genes": genes,
+           "owner": newOwner
+          })
+      )
+    )
+  )
 )
 
 (create-table critters)

@@ -1,5 +1,8 @@
 (env-keys ["admin"])
-(env-data { "admin-keyset": ["admin"] })
+(env-data { "admin-keyset": ["admin"],
+            "alice": ["alice"],
+            "bob": ["bob"]
+          })
 (begin-tx)
 (load "critters.pact")
 (commit-tx)
@@ -8,3 +11,6 @@
 (read critters "0")
 (showCritter "" (read critters "0"))
 (print (showGeneration 0))
+(transferCritter (read-keyset "alice") "0")
+(transferCritter (read-keyset "bob") "0")
+(transferCritter (read-keyset "admin-keyset") "0")
