@@ -69,9 +69,7 @@
 
   (defun owner (critterId:string)
     "Get the owner of a critter"
-    (let ((c (read critters critterId)))
-      (bind c {"owner" := o} o)
-    )
+    (with-read critters critterId {"owner":= o} o)
   )
 
   (defun transferCritter (newOwner:keyset critterId:string)
