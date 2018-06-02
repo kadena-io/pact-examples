@@ -5,12 +5,12 @@
   (defschema critter
     "Data defining a critter"
     genes:integer
-    matronId:integer
-    sireId:integer
+    matron-id:integer
+    sire-id:integer
     generation:integer
     owner:keyset
     transfer:bool
-    transferTo:keyset
+    transfer-to:keyset
   )
 
   (defschema countSchema
@@ -20,104 +20,106 @@
   (deftable critters:{critter})
   (deftable countTable:{countSchema})
 
-  (defun getAndIncCount:integer (k:string)
-    "Incremenent a row in the count table"
+  (defun get-inc-count:string (k:string)
+    "Incremenent row K in the count table"
     (with-read countTable k {"count" := count}
      (write countTable k {"count": (+ count 1)})
-     count
+     (format "{}" [count])
     )
   )
 
-  (defun createCritter:integer (genes:integer)
-    "Create a gen0 critter"
+  (defun create-critter:integer (genes:integer)
+    "Create a gen0 critter using GENES"
     (enforce-keyset 'admin-keyset)
-    (let ((i (getAndIncCount "critters")))
-      (insert critters (format "{}" [i])
-        { "matronId": 0,
-          "sireId": 0,
+    (let ((id (get-inc-count "critters")))
+      (insert critters id
+        { "matron-id": 0,
+          "sire-id": 0,
           "generation": 0,
           "genes": genes,
           "owner": (read-keyset "admin-keyset"),
           "transfer": false,
-          "transferTo": (read-keyset "admin-keyset")
+          "transfer-to": (read-keyset "admin-keyset")
         }
       )
-      i
+      id
     )
   )
 
-  (defun showCritter:string (str:string c:object)
-    "String representation of a critter"
-    (bind c { "matronId" := m,
-              "sireId" := s,
+  (defun show-critter:string (suffix:string critter:object)
+    "String representation of CRITTER appending SUFFIX"
+    (bind critter { "matron-id" := m,
+              "sire-id" := s,
               "generation" := gen,
               "genes" := genes,
               "owner" := o,
               "transfer" := t,
-              "transferTo" := tto
+              "transfer-to" := tto
             }
-      (+ (format "gen: {} matron: {} sire: {} owner: {} {} {} {}\n" [gen m s o t tto genes]) str)
+      (+ (format "gen: {} matron: {} sire: {} owner: {} {} {} {}\n"
+          [gen m s o t tto genes]) suffix)
     )
   )
 
-  (defun showGeneration:string (gen:integer)
-    "Get all the critters in the specified generation"
-    (let ((cs (select critters (where 'generation (= 0)))))
-         (fold (showCritter) "" cs)
+  (defun show-generation:string (gen:integer)
+    "Get all the critters in GEN generation"
+    (let ((cs (select critters (where 'generation (= gen)))))
+         (fold (show-critter) "" cs)
     )
   )
 
-  (defun owner (critterId:string)
-    "Get the owner of a critter"
-    (with-read critters critterId {"owner":= o} o)
+  (defun owner (critter-id:string)
+    "Get the owner of a critter CRITTER-ID"
+    (with-read critters critter-id {"owner":= o} o)
   )
 
-  (defun transferCritter (newOwner:keyset critterId:string)
-    "Transfer critter ownership to another party (Note: UNSAFE!)"
-    (let ((c (read critters critterId)))
+  (defun transfer-critter (new-owner:keyset critter-id:string)
+    "Transfer critter CRITTER-ID ownership to NEW-OWNER (Note: UNSAFE!)"
+    (let ((c (read critters critter-id)))
         (enforce-keyset (at "owner" c))
-        (update critters critterId
-          (+ {"owner": newOwner} c)
+        (update critters critter-id
+          (+ {"owner": new-owner} c)
         )
     )
   )
 
-  (defun setTransfer (critterId:string flag:bool to:keyset)
-    "Set a critter's transfer flag"
+  (defun set-transfer (critter-id:string transfer:bool to:keyset)
+    "Set critter CRITTER-ID TRANSFER flag to TO keyset"
     ;; NOTE: This is a private helper function
-    (let ((c (read critters critterId)))
+    (let ((c (read critters critter-id)))
         (enforce-keyset (at "owner" c))
-        (update critters critterId
-          (+ {"transfer": flag, "transferTo": to} c)
+        (update critters critter-id
+          (+ {"transfer": transfer, "transfer-to": to} c)
         )
     )
   )
 
-  (defun initiate-transfer (newOwner:keyset critterId:string)
-    "Transfer critter ownership to another party safely without the possibility of the critter getting lost"
-    (let ((c (read critters critterId)))
+  (defun initiate-transfer (new-owner:keyset critter-id:string)
+    "Transfer critter CRITTER-ID ownership to NEW-OWNER safely without \
+    \the possibility of the critter getting lost"
+    (let ((c (read critters critter-id)))
       (enforce-keyset (at "owner" c))
       ;; We don't call transferCritter because we're not the owner
-      (setTransfer critterId true newOwner)
+      (set-transfer critter-id true new-owner)
     )
   )
 
-  (defun complete-transfer (critterId:string)
-    (let ((c (read critters critterId)))
-      (enforce-keyset (at "transferTo" c))
+  (defun complete-transfer (critter-id:string)
+    (let ((c (read critters critter-id)))
+      (enforce-keyset (at "transfer-to" c))
       ;; We don't call transferCritter because we're not the owner
-      (update critters critterId
-        (+ {"owner": (at "transferTo" c)} c)
+      (update critters critter-id
+        (+ {"owner": (at "transfer-to" c)} c)
       )
-      (setTransfer critterId false (read-keyset "admin-keyset"))
+      (set-transfer critter-id false (read-keyset "admin-keyset"))
     )
   )
 
-  (defun cancel-transfer (critterId:string)
-    (let ((c (read critters critterId)))
+  (defun cancel-transfer (critter-id:string)
+    (let ((c (read critters critter-id)))
       (enforce-keyset (at "owner" c))
       ;; We don't call transferCritter because we're not the owner
-      (setTransfer critterId false (read-keyset "admin-keyset"))
+      (set-transfer critter-id false (read-keyset "admin-keyset"))
     )
   )
 )
