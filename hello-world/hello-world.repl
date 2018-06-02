@@ -1,0 +1,6 @@
+(env-data { "hello-keyset": ["hello-key"]})
+(env-keys ["hello-key"])
+(begin-tx)
+(load "hello-world.pact")
+(commit-tx)
+(hello.greet)
