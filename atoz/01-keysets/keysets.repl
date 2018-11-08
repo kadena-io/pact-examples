@@ -1,0 +1,51 @@
+;; populate message data
+(env-data
+  { "keyset-single-data":
+    ["carol"]
+    ,
+    "keyset-multi-data" :
+    { "keys": ["carol","juan","joe"]
+    ;; pred: try keys-all, keys-any
+    , "pred": "keys-2"
+    }
+    ,
+    "keyset-real-data":
+    ["ba54b224d1924dd98403f5c751abdd10de6cd81b0121800bf7bdbdcfaec7388d"]
+    })
+
+
+;; set signing keys
+(env-keys ["carol","joe"])
+
+;; load pact, which creates keysets
+;; and enforces multi
+(load "keysets.pact")
+
+(enforce-keyset 'keyset-carol)
+
+
+(env-keys ["juan"])
+
+(expect-failure "multisig needs two"
+  (enforce-keyset 'keyset-multi))
+
+(env-keys ["juan","carol","joe"])
+(enforce-keyset 'keyset-multi)
+
+(expect-failure "real keyset should fail"
+  (enforce-keyset 'keyset-real))
+
+(env-keys ["ba54b224d1924dd98403f5c751abdd10de6cd81b0121800bf7bdbdcfaec7388d"])
+(enforce-keyset 'keyset-real)
+
+;; try rotation of keyset-carol
+(env-data { "new-carol": ["carol1"]})
+;; can't rotate with keyset-real signing
+(expect-failure "need old keyset signers to redefine"
+  (define-keyset 'keyset-carol
+    (read-keyset "new-carol")))
+
+;;rotate keyset
+(env-keys ["carol"])
+(define-keyset 'keyset-carol
+  (read-keyset "new-carol"))
