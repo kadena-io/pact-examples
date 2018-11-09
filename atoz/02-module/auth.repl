@@ -1,0 +1,51 @@
+(begin-tx)
+(env-data
+  { "module-admin-keyset": ["admin1","admin2"]
+  , "module-operate-keyset": ["operate"]
+  }
+  )
+
+(env-keys ["admin1","admin2"])
+(load "auth.pact")
+(commit-tx)
+
+(begin-tx)
+(env-data
+  {
+    "lee-keyset": ["lee"]
+    })
+
+(use auth)
+(expect-failure "only operate can create users"
+  (create-user "user1" "lee"
+    (read-keyset "lee-keyset")))
+
+;; sign as operate
+(env-keys ["operate"])
+;; create user1 as lee
+(create-user "user1" "lee"
+    (read-keyset "lee-keyset"))
+
+;; operate can't change user1 name
+(expect-failure "only user can change name"
+  (change-nickname "user1" "li"))
+
+;; set new keyset data
+(env-data {"new-keyset": ["li"]})
+;; operate can't rotate keysets
+(expect-failure "only user can rotate keyset"
+  (rotate-keyset "user1"
+    (read-keyset "new-keyset")))
+
+;; sign as user1
+(env-keys ["lee"])
+;; user1 is only person who can change name
+(change-nickname "user1" "li")
+(rotate-keyset "user1" (read-keyset "new-keyset"))
+
+(expect-failure
+  "lee key no longer works for user 1"
+  (change-nickname "user1" "li"))
+
+(env-keys ["li"])
+(change-nickname "user1" "bruce lee")
