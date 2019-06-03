@@ -1,0 +1,54 @@
+; --------------------------------------------------------------------------
+; --------------------------------------------------------------------------
+; Using formal verification in Pact interfaces to create example coin.
+
+(begin-tx)
+
+(define-keyset "test-keyset" (sig-keyset))
+
+(module acct-module "test-keyset"
+  @doc "account schema and table module"
+
+  (defschema account
+
+    balance:integer
+    ks:keyset
+  )
+
+  (deftable accounts:{account})
+)
+
+(interface coin-sig
+
+  "Example Coin Contract abstract interface"
+
+  (use acct-module)
+
+  (defun transfer (from:string to:string amount:integer)
+    @doc   "Transfer money between accounts"
+    @model [(property (row-enforced accounts "ks" from))
+            (property (> amount 0))
+            (property (= 0 (column-delta accounts "balance")))
+            ]
+  )
+)
+
+(module hello-coin "test-keyset"
+  @doc "Implementaion of hello-coin based on coin-sig interface"
+
+  (use acct-module)
+  (implements coin-sig)
+
+  (defun transfer (from:string to:string amount:integer)
+    (with-read accounts from { 'balance := from-bal, 'ks := from-ks }
+      (with-read accounts to { 'balance := to-bal }
+        (enforce (>= from-bal amount) "Insufficient Funds")
+
+        (enforce-keyset from-ks)    ;; Only owner can transfer
+        (enforce (> amount 0)         "Non-positive amount")
+        (enforce (!= from to)         "Sender is the recipient")
+        (update accounts from { "balance": (- from-bal amount) })
+        (update accounts to   { "balance": (+ to-bal amount) }))))
+)
+(commit-tx)
+(verify "hello-coin")
