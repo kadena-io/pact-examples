@@ -13,7 +13,7 @@
   @doc "account schema module"
 
   (defcap ACCT-GOVERNANCE ()
-    (enforce-guard (read-keyset "admin-keyset")))
+    true)
 
   (defschema account
     balance:integer
@@ -35,11 +35,12 @@
   (use acct-module)
 
   (defcap HELLO-GOVERNANCE ()
-    (compose-capability (ACCT-GOVERNANCE)))
+    true)
 
   (deftable accounts:{account})
 
-  (defcap TRANSFER (from:string to:string amount:integer)
+  ;;; Named capability
+  (defcap CAN_TRANSFER (from:string amount:integer)
     "Capability to govern credit and debit calls"
     (with-read accounts from { "balance" := from-bal, "ks" := from-ks }
       (enforce (>= from-bal amount) "Insufficient Funds")
@@ -47,7 +48,8 @@
   )
 
   (defun transfer:string (from:string to:string amount:integer)
-    (with-capability (TRANSFER from to amount)
+    ;;; scoped-invocation of capability
+    (with-capability (CAN_TRANSFER from to amount)
       (with-read accounts from { 'balance := from-bal }
         (with-read accounts to { 'balance := to-bal }
           (update accounts from { "balance": (- from-bal amount) })
