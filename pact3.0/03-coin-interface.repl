@@ -13,7 +13,7 @@
   @doc "account schema module"
 
   (defcap ACCT-GOVERNANCE ()
-    (enforce-guard (read-keyset "admin-keyset")))
+    true)
 
   (defschema account
     balance:integer
@@ -55,7 +55,7 @@
   (implements coin-sig)
 
   (defcap HELLO-GOVERNANCE ()
-    (compose-capability (ACCT-GOVERNANCE)))
+    true)
 
   (deftable accounts:{account})
 

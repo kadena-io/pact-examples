@@ -36,8 +36,13 @@
 (module acct-module ACCT-GOVERNANCE
   @doc "account schema module with 'active' column"
 
+  (defun enforce-acct-admin ()
+    (enforce-guard (read-keyset "admin-keyset"))
+  )
+
   (defcap ACCT-GOVERNANCE ()
-    (enforce-guard (read-keyset "admin-keyset")))
+    (enforce-acct-admin)
+  )
 
   (defschema account
     balance:integer
@@ -47,7 +52,8 @@
 (commit-tx)
 
 ; --------------------------------------------------------------------------
-; Install hello-coin module
+; Install hello-coin module with same governance capability as
+; account schema module.
 ; --------------------------------------------------------------------------
 (begin-tx)
 
@@ -57,7 +63,9 @@
   (use acct-module)
 
   (defcap HELLO-GOVERNANCE ()
-    true
+    ;;; Module can only be updated if it satisfies the enforce admin function
+    ;;; in acct-module.
+    (enforce-acct-admin)
   )
 
   (deftable accounts:{account})
@@ -65,6 +73,31 @@
   (defun transfer (from:string to:string amount:integer)
     (with-read accounts from { 'balance := from-bal, 'ks := from-ks }
       (with-read accounts to { 'balance := to-bal }
+        (update accounts from { "balance": (- from-bal amount) })
+        (update accounts to   { "balance": (+ to-bal amount) }))))
+)
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Upgrade hello-coin module
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-keys ["product-dept" "dev-dept"])
+
+(module hello-coin HELLO-GOVERNANCE
+  @doc "Implementaion of hello-coin with insufficient funds checking"
+
+  (use acct-module)
+
+  (defcap HELLO-GOVERNANCE ()
+    (compose-capability (ACCT-GOVERNANCE)))
+
+  (deftable accounts:{account})
+
+  (defun transfer (from:string to:string amount:integer)
+    (with-read accounts from { 'balance := from-bal, 'ks := from-ks }
+      (with-read accounts to { 'balance := to-bal }
+        (enforce (>= from-bal amount) "Insufficient Funds") ;;; new enforcement
         (update accounts from { "balance": (- from-bal amount) })
         (update accounts to   { "balance": (+ to-bal amount) }))))
 )
