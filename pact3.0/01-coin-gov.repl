@@ -1,0 +1,93 @@
+; --------------------------------------------------------------------------
+; --------------------------------------------------------------------------
+; Example of using module governance capability
+
+
+; --------------------------------------------------------------------------
+; Install account schema module
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-data { "admin-keyset": ["product-dept" "dev-dept"] })
+(module acct-module ACCT-GOVERNANCE
+  @doc "account schema module"
+
+  (defcap ACCT-GOVERNANCE ()
+    ;;; module can only be upgraded if admin-keyset is satisfied.
+    ;;; i.e. If transaction signed by both "product-dept" and "dev-dept"
+    (enforce-guard (read-keyset "admin-keyset")))
+
+  (defschema account
+    balance:integer
+    ks:keyset))
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Upgrades schema by triggering module's governance capability.
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-keys ["product-dept" "dev-dept"])
+
+(module acct-module ACCT-GOVERNANCE
+  @doc "account schema module with 'active' column"
+
+  (defcap ACCT-GOVERNANCE ()
+    (enforce-guard (read-keyset "admin-keyset")))
+
+  (defschema account
+    balance:integer
+    ks:keyset
+    active:bool ;;; new column
+  ))
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Install hello-coin module with same governance capability as
+; account schema module.
+; --------------------------------------------------------------------------
+(begin-tx)
+
+(module hello-coin HELLO-GOVERNANCE
+  @doc "Implementaion of hello-coin"
+
+  (use acct-module)
+
+  (defcap HELLO-GOVERNANCE ()
+    ;;; Module can only be updated if it satisfies the capability specified
+    ;;; in acct-module's governance function.
+    (compose-capability (ACCT-GOVERNANCE))
+  )
+
+  (deftable accounts:{account})
+
+  (defun transfer (from:string to:string amount:integer)
+    (with-read accounts from { 'balance := from-bal, 'ks := from-ks }
+      (with-read accounts to { 'balance := to-bal }
+        (update accounts from { "balance": (- from-bal amount) })
+        (update accounts to   { "balance": (+ to-bal amount) }))))
+)
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Upgrade hello-coin module
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-keys ["product-dept" "dev-dept"])
+
+(module hello-coin HELLO-GOVERNANCE
+  @doc "Implementaion of hello-coin with insufficient funds checking"
+
+  (use acct-module)
+
+  (defcap HELLO-GOVERNANCE ()
+    (compose-capability (ACCT-GOVERNANCE)))
+
+  (deftable accounts:{account})
+
+  (defun transfer (from:string to:string amount:integer)
+    (with-read accounts from { 'balance := from-bal, 'ks := from-ks }
+      (with-read accounts to { 'balance := to-bal }
+        (enforce (>= from-bal amount) "Insufficient Funds") ;;; new enforcement
+        (update accounts from { "balance": (- from-bal amount) })
+        (update accounts to   { "balance": (+ to-bal amount) }))))
+)
+(commit-tx)

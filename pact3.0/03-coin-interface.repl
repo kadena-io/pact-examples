@@ -1,0 +1,83 @@
+; --------------------------------------------------------------------------
+; --------------------------------------------------------------------------
+; Using formal verification in Pact interfaces to create sample coin contract.
+
+
+; --------------------------------------------------------------------------
+; Installs account schema module
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-data { "admin-keyset": ["product-dept" "dev-dept"] })
+
+(module acct-module ACCT-GOVERNANCE
+  @doc "account schema module"
+
+  (defcap ACCT-GOVERNANCE ()
+    (enforce-guard (read-keyset "admin-keyset")))
+
+  (defschema account
+    balance:integer
+    ks:keyset
+    active:bool
+  )
+)
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Installs coin abstract interface
+; --------------------------------------------------------------------------
+(begin-tx)
+(interface coin-sig
+
+  "Coin Contract Abstract Interface Example"
+
+  (use acct-module)
+
+  (defun transfer:string (from:string to:string amount:integer)
+    @doc   "Transfer money between accounts"
+    @model [(property (row-enforced accounts "ks" from))
+            (property (> amount 0))
+            (property (= 0 (column-delta accounts "balance")))
+            ]
+  )
+)
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Installs hello-coin module
+; --------------------------------------------------------------------------
+(begin-tx)
+
+(module hello-coin HELLO-GOVERNANCE
+  @doc "Implementaion of hello-coin based on coin-sig interface"
+
+  (use acct-module)
+  (implements coin-sig)
+
+  (defcap HELLO-GOVERNANCE ()
+    (compose-capability (ACCT-GOVERNANCE)))
+
+  (deftable accounts:{account})
+
+  (defcap TRANSFER (from:string to:string amount:integer)
+    "Capability to govern credit and debit calls"
+    (with-read accounts from { "balance" := from-bal, "ks" := from-ks }
+      (enforce (>= from-bal amount) "Insufficient Funds")
+
+      (enforce-keyset from-ks)    ;; Only owner can transfer
+      (enforce (> amount 0)         "Non-positive amount")
+      (enforce (!= from to)         "Sender is the recipient")
+    )
+  )
+
+  (defun transfer:string (from:string to:string amount:integer)
+    (with-capability (TRANSFER from to amount)
+      (with-read accounts from { 'balance := from-bal }
+        (with-read accounts to { 'balance := to-bal }
+          (update accounts from { "balance": (- from-bal amount) })
+          (update accounts to   { "balance": (+ to-bal amount) }))))
+    (format "{} paid {} {} hello-coins" [from to amount])
+  )
+)
+(commit-tx)
+(verify "hello-coin")
