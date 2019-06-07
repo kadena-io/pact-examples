@@ -90,7 +90,8 @@
   (use acct-module)
 
   (defcap HELLO-GOVERNANCE ()
-    (compose-capability (ACCT-GOVERNANCE)))
+    (enforce-acct-admin)
+  )
 
   (deftable accounts:{account})
 
