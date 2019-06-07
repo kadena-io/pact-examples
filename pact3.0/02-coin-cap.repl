@@ -1,0 +1,60 @@
+; --------------------------------------------------------------------------
+; --------------------------------------------------------------------------
+; Example of using refactoring "enforce" statements into capabilities
+
+
+; --------------------------------------------------------------------------
+; Installs account schema module
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-data { "admin-keyset": ["product-dept" "dev-dept"] })
+
+(module acct-module ACCT-GOVERNANCE
+  @doc "account schema module"
+
+  (defcap ACCT-GOVERNANCE ()
+    true)
+
+  (defschema account
+    balance:integer
+    ks:keyset
+    active:bool
+  )
+)
+(commit-tx)
+
+; --------------------------------------------------------------------------
+; Installs hello-coin module with transfer and debit capabilities.
+; --------------------------------------------------------------------------
+(begin-tx)
+(env-keys ["product-dept" "dev-dept"])
+
+(module hello-coin HELLO-GOVERNANCE
+  @doc "Implementaion of hello-coin with capabilities"
+
+  (use acct-module)
+
+  (defcap HELLO-GOVERNANCE ()
+    true)
+
+  (deftable accounts:{account})
+
+  ;;; Named capability
+  (defcap CAN_TRANSFER (from:string amount:integer)
+    "Capability to govern credit and debit calls"
+    (with-read accounts from { "balance" := from-bal, "ks" := from-ks }
+      (enforce (>= from-bal amount) "Insufficient Funds")
+    )
+  )
+
+  (defun transfer:string (from:string to:string amount:integer)
+    ;;; scoped-invocation of capability
+    (with-capability (CAN_TRANSFER from to amount)
+      (with-read accounts from { 'balance := from-bal }
+        (with-read accounts to { 'balance := to-bal }
+          (update accounts from { "balance": (- from-bal amount) })
+          (update accounts to   { "balance": (+ to-bal amount) }))))
+    (format "{} paid {} {} hello-coins" [from to amount])
+  )
+)
+(commit-tx)
