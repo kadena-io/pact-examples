@@ -1,0 +1,75 @@
+(begin-tx)
+(env-data {
+  "admin-keyset": ["wallet-admin"]
+  })
+(env-keys ["wallet-admin"])
+(load "../coin-contract/coin-sig.pact")
+(load "../coin-contract/coin.pact")
+(load "max-limit-smart-wallet.pact")
+
+(use max-limit-smart-wallet)
+
+;;Create acct1
+(env-data {
+  "custodial-keyset": {
+        "keys": [
+            "acct1-custodial-key",
+            "acct1-non-custodial-key"
+        ],
+        "pred": "keys-any"
+    },
+  "non-custodial-keyset": {
+        "keys": [
+            "acct1-non-custodial-key"
+        ],
+        "pred": "keys-all"
+    }
+  })
+
+(env-keys ["acct1-custodial-key" "acct1-non-custodial-key"])
+
+(create-wallet-account "acct1" (read-keyset "custodial-keyset") (read-keyset "non-custodial-keyset") 100.0)
+
+;;Fund acct1 some money
+(test-capability (TRANSFER))
+(coin.credit "acct1" (wallet-module-guard) 1000.0)
+
+;;Create Acct2
+(env-data {
+  "custodial-keyset": ["acct2-custodial-key"],
+  "non-custodial-keyset": ["acct2-non-custodial-key"]})
+(env-keys ["acct2-custodial-key" "acct2-non-custodial-key"])
+
+(create-wallet-account "acct2" (read-keyset "custodial-keyset") (read-keyset "non-custodial-keyset") 100.0)
+(commit-tx)
+
+(begin-tx)
+
+(use max-limit-smart-wallet)
+
+;;Testing Wallet module guard
+(expect-failure "Any transfer fails when not called from wallet module" (coin.transfer "acct1" "acct2" 300.0))
+
+;;Testing acct1 transfer with custodial key present
+(env-keys ["acct1-custodial-key"])
+
+;;Testing custodial-tranfer
+(expect "Small amount transfer succeeds with custodial-tranfer" "Write succeeded" (custodial-transfer "acct1" "acct2" 10.0))
+(expect-failure "Big amount tranfer fails with custodial-tranfer" (custodial-transfer "acct1" "acct2" 200.0))
+
+;;Testing non-custodial-tranfer
+(expect-failure "Small amount transfer fails because non-custodial key not present" (non-custodial-transfer "acct1" "acct2" 10.0))
+(expect-failure "Big amount transfer fails because non-custodial key not present" (non-custodial-transfer "acct1" "acct2" 200.0))
+
+;;Testing acct1 transfer with custodial key present
+(env-keys ["acct1-non-custodial-key"])
+
+;;Testing custodial-tranfer
+(expect "Small amount transfer succeeds with custodial-tranfer" "Write succeeded" (custodial-transfer "acct1" "acct2" 10.0))
+(expect-failure "Big amount transfer fails with custodial-tranfer" (custodial-transfer "acct1" "acct2" 200.0))
+
+;;Testing non-custodial-tranfer
+(expect "Big amount transfer succeeds" "Write succeeded"(non-custodial-transfer "acct1" "acct2" 200.0))
+(expect "Small amount transfer succeeds" "Write succeeded" (non-custodial-transfer "acct1" "acct2" 10.0))
+
+(commit-tx)
