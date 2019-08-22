@@ -1,7 +1,4 @@
-(define-keyset 'smart-wallet-admin
-  (read-keyset 'admin-keyset))
-
-(module max-limit-smart-wallet 'smart-wallet-admin
+(module max-limit-smart-wallet GOVERNANCE
   @doc"'smart-wallet' provides safe transactions of Kadena coins. \
   \Users will have custodial or non-custodial transactions with this wallet with two keysets. \
   \Custodial keyset will be encrypted and saved by the software, while non-custodial keysets  \
@@ -10,6 +7,9 @@
   \transactions, users are required to provide non-custodial keys"
 
   (use coin)
+
+  (defcap GOVERNANCE()
+    (enforce false "Enforce non-upgradeability except in the case of a hard fork"))
 
   ; --------------------------------------------------------------------------
   ; Schemas and Tables
@@ -73,7 +73,7 @@
         "max-custodial-amount": max-custodial-amount
        }))
 
-  (defun custodial-transfer (sender:string receiver:string amount:decimal)
+  (defun custodial-transfer:string (sender:string receiver:string amount:decimal)
     @doc "This function enforces that tx amount is smaller than SENDER's    \
     \MAX_CUSTODIAL_AMOUNT, and then enforces the SENDER's CUSTODIAL_GUARD. \
     \ If the conditions qualify, transfers AMOUNT of Kadena Coin from SENDER \
@@ -83,13 +83,43 @@
       (with-capability (CUSTODIAL sender)
         (transfer sender receiver amount))))
 
-  (defun non-custodial-transfer (sender:string receiver:string amount:decimal)
+  (defun non-custodial-transfer:string (sender:string receiver:string amount:decimal)
     @doc "This function enforces SENDER's NON_CUSTODIAL_GUARD and transfers \
     \ AMOUNT of Kadena coins from SENDER account to RECEIVER account without \
     \limit."
 
     (with-capability (NON_CUSTODIAL sender)
       (transfer sender receiver amount)))
+
+  (defun update-max-custodial-amount:string (account:string amount:decimal)
+    @doc "This function enforces ACCOUNT's non-custodial keyset and updates \
+    \ACCOUNT's max-custodial-amount to AMOUNT"
+
+    (with-capability (NON_CUSTODIAL account)
+      (update wallet-table account {
+        "max-custodial-amount": amount
+        })))
+
+  (defun rotate-custodial-guard:string (account:string guard:guard)
+    @doc "This function enforces ACCOUNT's custodial-guard and presented GUARD\
+    \ and replaces ACCOUNT's custodial-guard with GUARD"
+
+    (enforce-guard guard)
+    (with-capability (CUSTODIAL account)
+      (update wallet-table account {
+        "custodial-guard": guard
+        })))
+
+  (defun rotate-non-custodial-guard:string (account:string guard:guard)
+    @doc "This function enforces ACCOUNT's non-custodial-guard and presented GUARD \
+    \ and replaces ACCOUNT's non-custodial-guard with GUARD"
+
+    (enforce-guard guard)
+    (with-capability (NON_CUSTODIAL account)
+      (update wallet-table account {
+        "non-custodial-guard": guard
+        })))
+
 )
 
 (create-table wallet-table)
