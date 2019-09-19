@@ -32,13 +32,13 @@
 (env-keys ["acct1-custodial-key" "acct1-non-custodial-key" "acct2-custodial-key" "acct2-non-custodial-key"])
 
 
-(create-wallet-account "acct1" (read-keyset "acct1-custodial-keyset-single") (read-keyset "acct1-non-custodial-keyset") 100.0)
+(create-wallet-account "acct1" (read-keyset "acct1-custodial-keyset-single") (read-keyset "acct1-non-custodial-keyset")  2000.0 100.0)
 
 ;;Fund acct1 some money
 (test-capability (TRANSFER))
 (coin.credit "acct1" (wallet-module-guard) 1000.0)
 
-(create-wallet-account "acct2" (read-keyset "acct2-custodial-keyset") (read-keyset "acct2-non-custodial-keyset") 100.0)
+(create-wallet-account "acct2" (read-keyset "acct2-custodial-keyset") (read-keyset "acct2-non-custodial-keyset")  2000.0 100.0)
 (commit-tx)
 
 (begin-tx)
@@ -50,46 +50,47 @@
 
 ;;Testing acct1 transfer with custodial key present
 (env-keys ["acct1-custodial-key"])
-
+(env-chain-data {"block-time": (time "2019-07-22T12:00:00Z")})
 ;;Testing custodial-tranfer
-(expect "Small amount transfer succeeds with custodial-tranfer" "Write succeeded" (custodial-transfer "acct1" "acct2" 10.0))
-(expect-failure "Big amount tranfer fails with custodial-tranfer" (custodial-transfer "acct1" "acct2" 200.0))
+(expect "Small amount transfer succeeds with custodial-tranfer" "Write succeeded" (low-security-transfer "acct1" "acct2" 10.0))
+(expect-failure "Big amount tranfer fails with custodial-tranfer" (low-security-transfer "acct1" "acct2" 200.0))
 
 ;;Testing non-custodial-tranfer
-(expect-failure "Small amount transfer fails because non-custodial key not present" (non-custodial-transfer "acct1" "acct2" 10.0))
-(expect-failure "Big amount transfer fails because non-custodial key not present" (non-custodial-transfer "acct1" "acct2" 200.0))
+(expect-failure "Small amount transfer fails because non-custodial key not present" (high-security-transfer "acct1" "acct2" 10.0))
+(expect-failure "Big amount transfer fails because non-custodial key not present" (high-security-transfer "acct1" "acct2" 200.0))
 
 ;;Testing update-max-custodial-amount
-(expect-failure "Max Transfer Limit of custodial-transfer fails because non-custodial key not present" (update-max-custodial-amount "acct1" 1000.0))
+(expect-failure "Max Transfer Limit of custodial-transfer fails because non-custodial key not present" (update-max-low-security-amount "acct1" 1000.0))
 
 ;;Testing rotate-custodial-guard
 ;;Rotates custodial guard from single custodial key to multisig with non-custodial key or custodial key.
-(expect "Custodial Guard Rotation succeeds" "Write succeeded" (rotate-custodial-guard "acct1" (read-keyset 'acct1-custodial-keyset-multi)))
+(expect "Custodial Guard Rotation succeeds" "Write succeeded" (rotate-low-security-guard "acct1" (read-keyset 'acct1-custodial-keyset-multi)))
 
 ;;Testing rotate-non-custodial-guard
-(expect-failure "Non Custodial Guard Rotation fails because non-custodial key not present" (rotate-non-custodial-guard "acct1" (read-keyset 'acct1-custodial-key)))
+(expect-failure "Non Custodial Guard Rotation fails because non-custodial key not present" (rotate-high-security-guard "acct1" (read-keyset 'acct1-custodial-key)))
 
 ;;Testing acct1 transfer with custodial key present
 (env-keys ["acct1-non-custodial-key"])
 
+(env-chain-data {"block-time": (time "2019-07-23T12:00:00Z")})
 ;;Testing custodial-tranfer
 ;;Succeeds because custodial keyset was rotated with multisig that allows any of custodial key and non-custodial key
-(expect "Small amount transfer succeeds with custodial-tranfer" "Write succeeded" (custodial-transfer "acct1" "acct2" 10.0))
-(expect-failure "Big amount transfer fails with custodial-tranfer because of maximum transfer limit" (custodial-transfer "acct1" "acct2" 200.0))
+(expect "Small amount transfer succeeds with custodial-tranfer" "Write succeeded" (low-security-transfer "acct1" "acct2" 10.0))
+(expect-failure "Big amount transfer fails with custodial-tranfer because of maximum transfer limit" (low-security-transfer "acct1" "acct2" 200.0))
 
 ;;Testing non-custodial-tranfer
-(expect "Big amount transfer succeeds" "Write succeeded" (non-custodial-transfer "acct1" "acct2" 200.0))
-(expect "Small amount transfer succeeds" "Write succeeded" (non-custodial-transfer "acct1" "acct2" 10.0))
+(expect "Big amount transfer succeeds" "Write succeeded" (high-security-transfer "acct1" "acct2" 200.0))
+(expect "Small amount transfer succeeds" "Write succeeded" (high-security-transfer "acct1" "acct2" 10.0))
 
 ;;Testing update-max-custodial-amount
-(expect "Max Transfer Limit of custodial-transfer succeeds" "Write succeeded" (update-max-custodial-amount "acct1" 1000.0))
+(expect "Max Transfer Limit of custodial-transfer succeeds" "Write succeeded" (update-max-low-security-amount "acct1" 1000.0))
 
 ;;Testing rotate-custodial-guard
-(expect "Custodial Guard Rotation succeeds and is rotated to non-custodial keyset" "Write succeeded" (rotate-custodial-guard "acct1" (read-keyset 'acct1-non-custodial-keyset)))
-(expect-failure "Custodial Guard Rotation fails because new guard enforcement failed" (rotate-custodial-guard "acct1" (read-keyset 'acct1-custodial-keyset-single)))
+(expect "Custodial Guard Rotation succeeds and is rotated to non-custodial keyset" "Write succeeded" (rotate-high-security-guard "acct1" (read-keyset 'acct1-non-custodial-keyset)))
+(expect-failure "Custodial Guard Rotation fails because new guard enforcement failed" (rotate-high-security-guard "acct1" (read-keyset 'acct1-custodial-keyset-single)))
 
 ;;Testing rotate-non-custodial-guard
-(expect "Custodial Guard Rotation succeeds" "Write succeeded" (rotate-non-custodial-guard "acct1" (read-keyset 'acct1-custodial-keyset-multi)))
+(expect "Custodial Guard Rotation succeeds" "Write succeeded" (rotate-low-security-guard "acct1" (read-keyset 'acct1-custodial-keyset-multi)))
 
 ;;Non-custodial-guard and custodial-guard have been replaced by each other
 

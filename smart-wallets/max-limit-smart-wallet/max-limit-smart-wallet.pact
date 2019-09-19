@@ -1,10 +1,10 @@
 (module max-limit-smart-wallet GOVERNANCE
   @doc"'smart-wallet' provides safe transactions of Kadena coins. \
-  \Users will have custodial or non-custodial transactions with this wallet with two keysets. \
-  \Custodial keyset will be encrypted and saved by the software, while non-custodial keysets  \
+  \Users will have low-security and high-security transactions with this wallet with two keysets. \
+  \Low-security keyset will be encrypted and saved by the software, while high-security keysets  \
   \are entirely managed by the user. For convenient usage, users can set maximum amount of    \
-  \ custodial transactions and allow small transactions with custodial keys. For bigger       \
-  \transactions, users are required to provide non-custodial keys"
+  \ low-security transactions and allow small transactions with low-seucrity keys. For bigger       \
+  \transactions, users are required to provide high-security keys"
 
   (use coin)
 
@@ -15,9 +15,11 @@
   ; Schemas and Tables
 
   (defschema wallet
-    custodial-guard:guard;keyset managed by software
-    non-custodial-guard:guard;;keyset managed by the user
-    max-custodial-amount:decimal;Maximum amount of transfer allowed with custodial keyset
+    low-security-guard:guard ;keyset managed by software
+    high-security-guard:guard ;;keyset managed by the user
+    max-low-security-amount:decimal;Maximum amount of transfer allowed with low-security keyset
+    low-security-withdrawal-time-limit:decimal
+    last-low-security-withdrawal-time:time
     )
 
   (deftable wallet-table:{wallet})
@@ -31,95 +33,134 @@
   ; --------------------------------------------------------------------------
   ; Capabilities
 
-  (defcap CUSTODIAL:bool (account)
-    @doc "Lookup and enforce custodial guards associated with an account"
+  (defcap LOW_SECURITY:bool (account)
+    @doc "Lookup and enforce low-security guards associated with an account"
     (with-read wallet-table account {
-        "custodial-guard":= guard
+        "low-security-guard":= guard
       }
-      (enforce-guard guard)))
+      (enforce-guard guard)
+      ))
 
-  (defcap NON_CUSTODIAL:bool (account)
-    @doc "Lookup and enforce non-custodial guards associated with an account"
+  (defcap HIGH_SECURITY:bool (account)
+    @doc "Lookup and enforce high-security guards associated with an account"
     (with-read wallet-table account {
-        "non-custodial-guard":= guard
+        "high-security-guard":= guard
       }
       (enforce-guard guard)))
 
   (defcap AMOUNT_CHECK:bool (account:string amount:decimal)
-    @doc "Lookup and enforce that the tx amount is in the range of allowed custodial tx amount"
+    @doc "Lookup and enforce that the tx amount is in the range of allowed low-security tx amount"
 
     (with-read wallet-table account {
-      "max-custodial-amount":= max
+      "max-low-security-amount":= max
       }
       (enforce (> max amount) "Amount is bigger than maximum")))
+
+  (defcap TIME_CHECK:bool (account:string)
+    @doc "Lookup and enforce low-security guards associated with an account"
+    (with-read wallet-table account {
+        "low-security-withdrawal-time-limit":= time-limit,
+        "last-low-security-withdrawal-time":= last-withdrawal-time}
+    (enforce (>=
+      (diff-time (curr-time) last-withdrawal-time)
+      time-limit)
+      "Withdrawal time limit has not met" )))
+
+  ; --------------------------------------------------------------------------
+  ; Constants
+
+  (defconst EPOCH (time "1970-01-01T00:00:00Z"))
 
   ; --------------------------------------------------------------------------
   ; Smart Wallet Functions
 
-  (defun create-wallet-account:string (account:string custodial-guard:guard non-custodial-guard:guard max-custodial-amount:decimal)
+  (defun create-wallet-account:string (
+    account:string
+    low-security-guard:guard
+    high-security-guard:guard
+    max-low-security-amount:decimal
+    low-security-withdrawal-time-limit:decimal)
     @doc "Create a coin account with ACCOUNT and WALLET_MODULE_GUARD in coin-table,     \
-    \and create a wallet account with ACCOUNT, CUSTODIAL_GUARD, and NON_CUSTODIAL_GUARD,\
-    \ and MAX_CUSTODIAL_AMOUNT "
+    \and create a wallet account with ACCOUNT, LOW_SECURITY_GUARD, and HIGH_SECURITY_GUARD,\
+    \ and MAX_LOW_SECURITY_AMOUNT "
 
-    (enforce-guard custodial-guard)
-    (enforce-guard non-custodial-guard)
+    (enforce-guard low-security-guard)
+    (enforce-guard high-security-guard)
 
     ;;Create Account in Kadena Coin Table with Wallet Module Guard.
     ;;This Prevents other contracts from tx functions of accounts created by the wallet.
     (create-account account (wallet-module-guard))
     (insert wallet-table account {
-        "custodial-guard": custodial-guard,
-        "non-custodial-guard": non-custodial-guard,
-        "max-custodial-amount": max-custodial-amount
+        "low-security-guard": low-security-guard,
+        "high-security-guard": high-security-guard,
+        "max-low-security-amount": max-low-security-amount,
+        "low-security-withdrawal-time-limit": low-security-withdrawal-time-limit,
+        "last-low-security-withdrawal-time": EPOCH
        }))
 
-  (defun custodial-transfer:string (sender:string receiver:string amount:decimal)
+  (defun low-security-transfer:string (sender:string receiver:string amount:decimal)
     @doc "This function enforces that tx amount is smaller than SENDER's    \
-    \MAX_CUSTODIAL_AMOUNT, and then enforces the SENDER's CUSTODIAL_GUARD. \
+    \MAX_LOW_SECURITY_AMOUNT, and then enforces the SENDER's HIGH_SECURITY_GUARD. \
     \ If the conditions qualify, transfers AMOUNT of Kadena Coin from SENDER \
     \account to RECEIVER account."
 
-    (with-capability (AMOUNT_CHECK sender amount)
-      (with-capability (CUSTODIAL sender)
-        (transfer sender receiver amount))))
+    (with-capability (LOW_SECURITY sender)
+      (with-capability (TIME_CHECK sender)
+        (with-capability (AMOUNT_CHECK sender amount)
+          (transfer sender receiver amount)
+          (update wallet-table sender {
+            "last-low-security-withdrawal-time":(curr-time)
+            })))))
 
-  (defun non-custodial-transfer:string (sender:string receiver:string amount:decimal)
-    @doc "This function enforces SENDER's NON_CUSTODIAL_GUARD and transfers \
+  (defun high-security-transfer:string (sender:string receiver:string amount:decimal)
+    @doc "This function enforces SENDER's HIGH_SECURITY_GUARD and transfers \
     \ AMOUNT of Kadena coins from SENDER account to RECEIVER account without \
     \limit."
 
-    (with-capability (NON_CUSTODIAL sender)
+    (with-capability (HIGH_SECURITY sender)
       (transfer sender receiver amount)))
 
-  (defun update-max-custodial-amount:string (account:string amount:decimal)
-    @doc "This function enforces ACCOUNT's non-custodial keyset and updates \
-    \ACCOUNT's max-custodial-amount to AMOUNT"
+  (defun update-max-low-security-amount:string (account:string amount:decimal)
+    @doc "This function enforces ACCOUNT's high-security keyset and updates \
+    \ACCOUNT's max-low-security-amount to AMOUNT"
 
-    (with-capability (NON_CUSTODIAL account)
+    (with-capability (HIGH_SECURITY account)
       (update wallet-table account {
-        "max-custodial-amount": amount
+        "max-low-security-amount": amount
         })))
 
-  (defun rotate-custodial-guard:string (account:string guard:guard)
-    @doc "This function enforces ACCOUNT's custodial-guard and presented GUARD\
-    \ and replaces ACCOUNT's custodial-guard with GUARD"
+  (defun update-low-security-withdrawal-time-limit:string (account:string withdrawal-time-limit:decimal)
+    @doc "This function enforces ACCOUNT's high-security keyset and updates \
+    \ACCOUNT's low-security-withdrawal-time-limit to WITHDRAWAL_TIME_LIMIT"
+
+    (with-capability (HIGH_SECURITY account)
+      (update wallet-table account {
+        "low-security-withdrawal-time-limit": withdrawal-time-limit
+        })))
+
+  (defun rotate-low-security-guard:string (account:string guard:guard)
+    @doc "This function enforces ACCOUNT's low-security-guard and presented GUARD\
+    \ and replaces ACCOUNT's low-security-guard with GUARD"
 
     (enforce-guard guard)
-    (with-capability (CUSTODIAL account)
+    (with-capability (LOW_SECURITY account)
       (update wallet-table account {
-        "custodial-guard": guard
+        "low-security-guard": guard
         })))
 
-  (defun rotate-non-custodial-guard:string (account:string guard:guard)
-    @doc "This function enforces ACCOUNT's non-custodial-guard and presented GUARD \
-    \ and replaces ACCOUNT's non-custodial-guard with GUARD"
+  (defun rotate-high-security-guard:string (account:string guard:guard)
+    @doc "This function enforces ACCOUNT's high-security-guard and presented GUARD \
+    \ and replaces ACCOUNT's high-security-guard with GUARD"
 
     (enforce-guard guard)
-    (with-capability (NON_CUSTODIAL account)
+    (with-capability (HIGH_SECURITY account)
       (update wallet-table account {
-        "non-custodial-guard": guard
+        "high-security-guard": guard
         })))
 
+  (defun curr-time ()
+    (at 'block-time (chain-data))
+  )
 )
 
 (create-table wallet-table)
