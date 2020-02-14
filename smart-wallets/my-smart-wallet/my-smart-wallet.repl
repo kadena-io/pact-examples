@@ -1,0 +1,170 @@
+(begin-tx)
+(env-data {
+  "admin-keyset": ["wallet-admin"]
+  })
+(env-keys ["wallet-admin"])
+(load "../coin-contract/fungible-v2.pact")
+(load "../coin-contract/coin.pact")
+
+;;Load master key
+(env-data {
+  "master-keyset": {
+        "keys": [
+           "master"
+        ],
+        "pred": "keys-all"
+    }})
+
+(load "my-smart-wallet.pact")
+
+;;Load Account keysets
+(env-data
+  {"acct1": {
+        "keys": [
+            "acct1-key"
+        ],
+        "pred": "keys-all"
+    },
+  "acct2": {
+          "keys": [
+              "acct2-key"
+          ],
+          "pred": "keys-all"
+      }
+  })
+
+;;Create wallet account, acct1
+(env-keys ["acct1-key"])
+
+(expect "Create acct1 account in wallet" "Write succeeded" (create-wallet-account "acct1" (read-keyset "acct1")))
+(expect "acct1 created in coin table" "acct1" (at "account" (coin.details 'acct1)))
+
+(expect-failure "Failed to create acct2 as a wallet account - keyset is not signed" (create-wallet-account "acct2" (read-keyset "acct2")))
+
+;;Create coin account, acct2
+(coin.create-account "acct2" (read-keyset "acct2"))
+(expect "acct2 created in coin table" "acct2" (at "account" (coin.details 'acct2)))
+
+;;Fund acct1 1000.0
+(test-capability (coin.CREDIT "acct1"))
+(coin.credit "acct1" (wallet-module-guard) 1000.0)
+(expect "acct is funded by 1000.0" 1000.0 (coin.get-balance 'acct1))
+
+(commit-tx)
+
+(begin-tx)
+;;Test transfer when signing with master
+(env-data {
+  "master-keyset": {
+    "keys": [
+       "master"
+    ],
+    "pred": "keys-all"
+}})
+(use my-smart-wallet)
+
+(env-sigs [{'key: "acct1-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 20.0), (TRANSFER "acct1" 20.0)]}])
+
+(expect-failure "Cannot install capability without master" (test-capability (coin.TRANSFER "acct1" "acct2" 20.0)))
+(expect-failure "Transfer fails when not called from wallet module or signed with GOV"
+  (coin.transfer "acct1" "acct2" 20.0))
+
+(env-sigs [{'key: "master", 'caps: [(coin.TRANSFER "acct1" "acct2" 970.0)]}])
+
+(test-capability (coin.TRANSFER "acct1" "acct2" 970.0))
+(expect "Transfer succeeds when signed with master-key"
+  "Write succeeded" (coin.transfer "acct1" "acct2" 970.0))
+
+(commit-tx)
+
+(begin-tx)
+
+;;Test transfer when signing with wallet guard
+(use my-smart-wallet)
+(env-chain-data { "block-time": (time "2020-01-01T00:00:00Z") })
+(env-sigs [{'key: "acct1-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 30.0), (TRANSFER "acct1" 30.0)]}])
+
+(expect "acct1 has balance of 30.0" 30.0 (coin.get-balance 'acct1))
+
+(install-capability (TRANSFER "acct1" 30.0))
+(expect-failure "transfer amount exceeds maximum transfer limit 20.0" (transfer "acct1" "acct2" 30.0))
+
+(env-sigs [{'key: "acct1-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 20.0), (TRANSFER "acct1" 20.0)]}])
+
+(install-capability (TRANSFER "acct1" 20.0))
+(expect-failure "Minimum balance of 20.0 is reached after this transfer" (transfer "acct1" "acct2" 20.0))
+
+(env-sigs [{'key: "acct1-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 1.0), (TRANSFER "acct1" 1.0)]}])
+
+(install-capability (TRANSFER "acct1" 1.0))
+(expect "Transfer succeeds" "Write succeeded" (transfer "acct1" "acct2" 1.0))
+
+(expect "acct1 has balance of 29.0" 29.0 (coin.get-balance 'acct1))
+
+(commit-tx)
+
+(begin-tx)
+
+(use my-smart-wallet)
+
+(env-sigs [{'key: "acct1-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 1.0), (TRANSFER "acct1" 1.0)]}])
+(env-chain-data { "block-time": (time "2020-01-01T00:29:00Z") })
+
+(install-capability (TRANSFER "acct1" 1.0))
+(expect-failure "Can't make 2 transfers within 1800 seconds" (transfer "acct1" "acct2" 1.0))
+
+(env-chain-data { "block-time": (time "2020-01-01T00:30:00Z") })
+(install-capability (TRANSFER "acct1" 1.0))
+(expect "Transfer succeeds after 30 minutes has passed" "Write succeeded"(transfer "acct1" "acct2" 1.0))
+
+(commit-tx)
+
+(begin-tx)
+;;recover wallet guards when lost
+(use my-smart-wallet)
+
+(env-chain-data { "block-time": (time "2020-01-01T01:00:00Z") })
+(env-sigs [{'key: "master", 'caps: []}, {'key: "acct2-key", 'caps: []}])
+(env-data {
+  "acct2": ["acct2-key"]
+  })
+
+(expect "acct1 guard is rotated with acct2-key when signed with master key" "Write succeeded"
+  (rotate-guard "acct1" (read-keyset 'acct2)))
+
+(env-sigs [{'key: "acct1-key", 'caps: [(TRANSFER "acct1" 2.0)]}])
+(install-capability (coin.TRANSFER "acct1" "acct2" 2.0))
+(expect-failure "transfer fails when signed with old guard" (transfer "acct1" "acct2" 2.0))
+
+(env-sigs [{'key: "acct2-key", 'caps: [(TRANSFER "acct1" 2.0)]}])
+(install-capability (coin.TRANSFER "acct1" "acct2" 2.0))
+(expect "transfer succeeds when signed with new guard" "Write succeeded" (transfer "acct1" "acct2" 2.0))
+
+(commit-tx)
+
+(begin-tx)
+(use my-smart-wallet)
+
+(env-chain-data { "block-time": (time "2020-01-01T01:30:00Z") })
+
+(env-data {
+  "acct3": ["acct3-key"]
+  })
+
+(env-sigs [
+  {'key: "acct2-key", 'caps: [
+    (coin.TRANSFER "acct1" "acct3" 3.2),
+    (TRANSFER "acct1" 3.0)]}
+  {'key: "acct3-key", 'caps: [
+    (coin.TRANSFER "acct3" "acct1" 0.2)]}])
+
+(expect "transfer succeeds when signed with sender and receiver" "Write succeeded"
+  (safe-transfer "acct1" "acct3" (read-keyset 'acct3) 3.0 0.2))
+
+(expect "acct3 is funded 3.0 coins" 3.0
+  (coin.get-balance 'acct3))
+
+(env-keys ["acct3-key"])
+(expect "acct3 is guarded by acct3-key" true
+  (enforce-guard (at 'guard (coin.details 'acct3))))
+(commit-tx)

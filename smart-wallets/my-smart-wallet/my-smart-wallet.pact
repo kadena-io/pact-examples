@@ -114,7 +114,7 @@
   )
 
   (defun transfer-create (account receiver receiver-guard amount)
-    @doc "Runs coin.transfer-create with customized rules. "
+    @doc "Runs coin.transfer-create with customized rules."
     (with-capability (TRANSFER account amount)
       (coin.transfer-create account receiver receiver-guard amount)
     )
