@@ -35,21 +35,29 @@
         "new-key"
     ],
     "pred": "keys-all"
-    }})
+    },
+    "tguard": {
+      "keys": [
+          "t-key"
+      ],
+      "pred": "keys-all"
+      }
+      })
 
 (use n-key-wallet)
 
 ;;Create wallet account, acct1
 
 (expect "acct1 is created as a smart user" "Write succeeded"
-  (create-smart-user "acct1" [(read-keyset 'acct1) (read-keyset 'acct2)]))
+  (create-smart-user "acct1" [(read-keyset 'acct1) (read-keyset 'acct2)] (read-keyset 'tguard)))
+(coin.details 'acct1)
 (expect "acct1 exists in coin table"
-  {"account": "acct1", "balance": 0.0, "guard": (smart-guard)}
+  {"account": "acct1", "balance": 0.0, "guard": (smart-guard (read-keyset 'tguard))}
   (coin.details 'acct1))
 
 ;;Fund acct1
 (test-capability (coin.COINBASE))
-(expect "acct1 is funded using coinbase" "Write succeeded"(coin.coinbase "acct1" (smart-guard) 100.0))
+(expect "acct1 is funded using coinbase" "Write succeeded"(coin.coinbase "acct1" (smart-guard (read-keyset 'tguard)) 100.0))
 (expect "acct1 balance is 100.0" 100.0
   (at 'balance (coin.details 'acct1)))
 
@@ -92,9 +100,8 @@
 (use n-key-wallet)
 
 (env-sigs [
-  {'key: "wallet-admin", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {'key: "t-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
   {"key": "acct1-key", "caps": []} ])
-
 (expect
   "1/2 keys is signed for 1.0"
   "Write succeeded" (smart-transfer 'acct1 'acct2 1.0))
@@ -112,7 +119,7 @@
 (use n-key-wallet)
 
 (env-sigs [
-  {'key: "wallet-admin", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {'key: "t-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
   {"key": "acct1-key", "caps": []},
   {"key": "acct2-key", "caps": []} ])
 
