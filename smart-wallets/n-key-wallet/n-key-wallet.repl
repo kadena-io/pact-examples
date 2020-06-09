@@ -1,0 +1,241 @@
+;;Load contracts
+(begin-tx)
+(env-data {
+  "admin-keyset": ["wallet-admin"]
+  })
+(env-keys ["wallet-admin"])
+(load "../coin-contract/fungible-v2.pact")
+(load "../coin-contract/coin.pact")
+
+;;Load admin key
+(env-data {
+  "admin-keyset": ["wallet-admin"]
+  })
+
+(load "n-key-wallet.pact")
+(commit-tx)
+
+(begin-tx)
+;;Load Account keysets
+(env-data
+  {"acct1": {
+        "keys": [
+            "acct1-key"
+        ],
+        "pred": "keys-all"
+    },
+  "acct2": {
+          "keys": [
+              "acct2-key"
+          ],
+          "pred": "keys-all"
+      },
+  "new": {
+    "keys": [
+        "new-key"
+    ],
+    "pred": "keys-all"
+    },
+    "guardian-guard": {
+      "keys": [
+          "guardian-key"
+      ],
+      "pred": "keys-all"
+      }
+      })
+
+(use n-key-wallet)
+
+;;Create wallet account, acct1
+(env-keys ["guardian-key"])
+(expect "acct1 is created as a smart user" "Write succeeded"
+  (create-smart-user "acct1" [(read-keyset 'acct1) (read-keyset 'acct2)] (read-keyset 'guardian-guard)))
+(expect "acct1 exists in coin table"
+  {"account": "acct1", "balance": 0.0, "guard": (smart-guard)}
+  (coin.details 'acct1))
+
+;;Fund acct1
+(test-capability (coin.COINBASE))
+(expect "acct1 is funded using coinbase" "Write succeeded"(coin.coinbase "acct1" (smart-guard) 100.0))
+(expect "acct1 balance is 100.0" 100.0
+  (at 'balance (coin.details 'acct1)))
+
+;;Test utility functions
+(commit-tx)
+;;logic
+(use n-key-wallet)
+(expect "50 / 100 when 6 keys are in the db" 3 (logic 6 50.0 100.0))
+(expect "51 / 100 when 6 keys are in the db" 4 (logic 6 51.0 100.0))
+(expect "51 / 100 when 2 keys are in the db" 2 (logic 2 51.0 100.0))
+(expect "1 / 100 when 2 keys are in the db" 1 (logic 2 1.0 100.0))
+
+;;numKeys Needed of acct1 to sign
+(expect "acct1 to sign transfer of 51.0" 2 (numKeysNeeded "acct1" 51.0))
+(expect "acct1 to sign transfer of 1.0" 1 (numKeysNeeded "acct1" 1.0))
+
+;;numKeys signed
+(env-keys [])
+(expect "0 keys are signed" 0 (numKeysSigned "acct1"))
+
+(env-keys ["acct1-key", "noone's-key"])
+(expect "1 keys are signed" 1 (numKeysSigned "acct1"))
+
+(env-keys ["acct2-key", "noone's-key"])
+(expect "1 keys are signed" 1 (numKeysSigned "acct1"))
+
+(env-keys ["acct1-key", "acct2-key", "noone's-key"])
+(expect "2 keys are signed" 2 (numKeysSigned "acct1"))
+
+;;Test smart transfer
+
+;;create a none-smart wallet user
+(begin-tx)
+(coin.create-account "acct2" (read-keyset 'new))
+(commit-tx)
+
+;;Test coin.transfer (will fail unless admin-key is signed)
+(begin-tx)
+(use n-key-wallet)
+
+(env-sigs [
+  ;;Bring TRANSFER capability into scope
+  {'key: "dumb-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {"key": "acct1-key", "caps": []},
+  {"key": "acct2-key", "caps": []} ])
+
+(expect-failure
+  "coin.transfer does not succeed unless admin-keyset is signed"
+  "Keyset failure"
+  (coin.transfer 'acct1 'acct2 1.0))
+
+(env-sigs [
+  ;;Bring TRANSFER capability into scope
+  {'key: "wallet-admin", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {"key": "acct1-key", "caps": []},
+  {"key": "acct2-key", "caps": []} ])
+
+(expect
+  "Transfer succeeds when admin-keyset(module guard) is signed"
+  "Write succeeded"
+  (coin.transfer 'acct1 'acct2 1.0))
+
+
+(rollback-tx)
+
+
+;;Test smart-transfer
+;;Sign with 1/2 key
+(begin-tx)
+(use n-key-wallet)
+
+(env-sigs [
+  ;;Bring TRANSFER capability into scope
+  {'key: "dumb-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {"key": "acct1-key", "caps": []} ])
+
+(expect
+  "1/2 keys is signed for 1.0"
+  "Write succeeded" (smart-transfer 'acct1 'acct2 1.0))
+(expect "balance of acct1" 99.0 (total-balance 'acct1))
+(expect "balance of acct2" 1.0 (total-balance 'acct2))
+
+(expect-failure
+  "1/2 keys is signed for 51.0/99.0"
+  "1 more keys need to be signed"
+  (smart-transfer 'acct1 'acct2 51.0))
+(expect "balance of acct1" 99.0 (total-balance 'acct1))
+(expect "balance of acct2" 1.0 (total-balance 'acct2))
+(rollback-tx)
+
+;;Sign with 2/2 keys
+(begin-tx)
+(use n-key-wallet)
+
+(env-sigs [
+  ;;Bring TRANSFER capability into scope
+  {'key: "dumb-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {"key": "acct1-key", "caps": []},
+  {"key": "acct2-key", "caps": []} ])
+
+(expect
+  "2/2 keys is signed for 1.0/100.0"
+  "Write succeeded" (smart-transfer 'acct1 'acct2 1.0))
+(expect "balance of acct1" 99.0 (total-balance 'acct1))
+(expect "balance of acct2" 1.0 (total-balance 'acct2))
+
+(expect
+  "2/2 keys is signed for 51.0/99.0"
+  "Write succeeded" (smart-transfer 'acct1 'acct2 51.0))
+(expect "balance of acct1" 48.0 (total-balance 'acct1))
+(expect "balance of acct2" 52.0 (total-balance 'acct2))
+
+(rollback-tx)
+
+(begin-tx)
+(use n-key-wallet)
+
+(env-data {
+  "new1-keyset": ["n1-key"],
+  "new2-keyset": ["n2-key"]
+  })
+
+;;Rotate guards
+
+;;Don't sign with guardian key
+(env-keys ['acct1-key 'acct2-key])
+
+(expect-failure
+  "Guardian is not signed"
+  "Keyset failure"
+  (rotate-guards "acct1" [
+    (read-keyset "new1-keyset")
+    (read-keyset "new2-keyset")]))
+
+;;Sign with guardian key
+(env-keys ['guardian-key])
+(expect
+  "Rotate guards of acct1"
+  "Write succeeded"
+  (rotate-guards "acct1" [
+    (read-keyset "new1-keyset")
+    (read-keyset "new2-keyset")]))
+(commit-tx)
+
+;;Transfer with old guards - will fail
+(begin-tx)
+(use n-key-wallet)
+
+(env-sigs [
+  ;;Bring TRANSFER capability into scope
+  {'key: "dumb-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {"key": "acct1-key", "caps": []},
+  {"key": "acct2-key", "caps": []} ])
+
+(expect-failure
+  "Rotated keys are not signed"
+  "2 more keys need to be signed"
+  (smart-transfer 'acct1 'acct2 99.0))
+
+(expect "balance of acct1" 100.0 (total-balance 'acct1))
+(expect "balance of acct2" 0.0 (total-balance 'acct2))
+
+(commit-tx)
+
+;;Transfer with rotated guards - will fail
+(begin-tx)
+(use n-key-wallet)
+
+(env-sigs [
+  ;;Bring TRANSFER capability into scope
+  {'key: "dumb-key", 'caps: [(coin.TRANSFER "acct1" "acct2" 100.0)]},
+  {"key": "n1-key", "caps": []},
+  {"key": "n2-key", "caps": []} ])
+
+(expect
+  "2/2 of rotated keys is signed for 99.0/100.0"
+  "Write succeeded" (smart-transfer 'acct1 'acct2 99.0))
+
+(expect "balance of acct1" 1.0 (total-balance 'acct1))
+(expect "balance of acct2" 99.0 (total-balance 'acct2))
+
+(commit-tx)
