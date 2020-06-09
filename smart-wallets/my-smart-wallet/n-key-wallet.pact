@@ -2,25 +2,35 @@
 ; (namespace 'user)
 (module n-key-wallet 'admin-keyset
 
-  ;;Create a smart wallet interface.
+  ;;Create a smart wallet interface .
   (defschema user
-    id:string
+    user:string
     limitLogic:string
-    guards:list)
+    guards:list
+    transfer-guard:guard)
 
   (deftable user-table:{user})
 
-  (defun smart-guard:guard ()
-    (create-module-guard 'wallet-guard))
+  (defun enforce-smart-guard:bool (tguard:guard)
+    @doc "Enforce module guard and transfer guard"
+    (enforce-guard (create-module-guard 'wallet-guard))
+    (enforce-guard tguard)
+    )
 
-  (defun create-smart-user (id:string guards:[guard])
+  (defun smart-guard:guard (tguard:guard)
+    @doc "Create a smart guard that guards against direct coin.transfer of the account"
+    (create-user-guard (enforce-smart-guard tguard))
+    )
+
+  (defun create-smart-user (user:string guards:[guard] tguard:guard)
     @doc "Create a coin account managed by customized smart wallet"
-    (insert user-table id {
-      "id": id,
+    (insert user-table user {
+      "user": user,
       "limitLogic": "default",
-      "guards": guards
+      "guards": guards,
+      "transfer-guard":tguard
       })
-    (coin.create-account id (smart-guard))
+    (coin.create-account user (smart-guard tguard))
   )
 
   (defun smart-transfer (account receiver amount)
@@ -28,11 +38,11 @@
     (enforce-signed account amount)
     (coin.transfer account receiver amount))
 
-  (defun enforce-signed:bool (id amount)
+  (defun enforce-signed:bool (user amount)
     @doc "Enforced customized rule to transfer."
     (let* (
-      (needed (numKeysNeeded id amount))
-      (signed (numKeysSigned id)))
+      (needed (numKeysNeeded user amount))
+      (signed (numKeysSigned user)))
       (enforce (<= needed signed)
         (format "{} more keys need to be signed"
         [(- needed signed)]))))
@@ -46,12 +56,12 @@
     (enforce (<= amount balance) "Insufficient balance")
     (logic (numKeys user) amount balance)))
 
-  (defun numKeysSigned:integer (id:string)
+  (defun numKeysSigned:integer (user:string)
     @doc "Number of keys signed"
     (length
       (filter
         (= true)
-          (map (try-enforce-guard) (guards id)))))
+          (map (try-enforce-guard) (guards user)))))
 
   (defun try-enforce-guard:bool (guard:guard)
     @doc "Try enforcing a guard for transfer and returns result"
@@ -67,8 +77,8 @@
   (defun guards (user:string)
     (at 'guards (read user-table user)))
 
-  (defun total-balance (id:string)
-    (at 'balance (coin.details id)))
+  (defun total-balance (user:string)
+    (at 'balance (coin.details user)))
 )
 
 (create-table user-table)
