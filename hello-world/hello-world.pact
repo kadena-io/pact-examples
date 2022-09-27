@@ -1,7 +1,8 @@
+(namespace "free")
 
-(define-keyset 'hello-admin (read-keyset 'hello-keyset))
+(define-keyset "free.hello-admin" (read-keyset "hello-keyset"))
 
-(module hello 'hello-admin
+(module hello "free.hello-admin"
   "Pact hello-world with database example"
 
   (defschema hello-schema
