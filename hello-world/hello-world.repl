@@ -1,6 +1,7 @@
-(env-data { "hello-keyset": ["hello-key"]})
 (env-keys ["hello-key"])
+(env-data {"hello-keyset":{"keys":["hello-key"],"pred":"keys-all"} })
+
 (begin-tx)
+(define-namespace "free" (sig-keyset)(sig-keyset))
 (load "hello-world.pact")
 (commit-tx)
-(hello.greet)
