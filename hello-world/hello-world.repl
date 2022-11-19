@@ -1,6 +1,12 @@
-(env-data { "hello-keyset": ["hello-key"]})
-(env-keys ["hello-key"])
+(env-data {
+    "admin-keyset": { "keys": [], "pred": "keys-all" },
+    "hello-keyset": { "keys": [], "pred": "keys-all" }
+})
 (begin-tx)
+(define-namespace "free" (read-keyset "hello-keyset") (read-keyset "admin-keyset"))
+(namespace 'free)
+(enforce-keyset (read-keyset "hello-keyset"))
+(define-keyset "free.hello-keyset" (read-keyset "hello-keyset"))
 (load "hello-world.pact")
 (commit-tx)
-(hello.greet)
+(free.hello.greet)

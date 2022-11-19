@@ -1,7 +1,6 @@
+(namespace "free")
 
-(define-keyset 'hello-admin (read-keyset 'hello-keyset))
-
-(module hello 'hello-admin
+(module hello "free.hello-keyset"
   "Pact hello-world with database example"
 
   (defschema hello-schema
@@ -20,7 +19,7 @@
       (format "Hello, {}!" [value])))
 )
 
-(create-table hellos)
+(create-table free.hellos)
 
-(hello "world") ;; store "hello"
-(greet)         ;; say hello!
+(free.hello "world") ;; store "hello"
+(free.greet)         ;; say hello!
